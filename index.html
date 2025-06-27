@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>PVPテクスチャ平均色枠ツール（PNG限定サイズ自由）</title>
+  <title>PVPテクスチャ平均色枠ツール（PNG限定・ZIP対応）</title>
   <style>
     body {
       background: #121212;
@@ -21,7 +21,7 @@
       margin: 10px;
       image-rendering: pixelated;
       border: 1px solid #555;
-      max-width: 256px; /* 大きい画像は見やすいように最大サイズ制限 */
+      max-width: 256px;
       max-height: 256px;
     }
     input, label {
@@ -32,21 +32,41 @@
       color: #33f;
       margin-bottom: 10px;
     }
+    #zip-download {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: #444;
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: none;
+    }
+    #zip-download:hover {
+      background: #666;
+    }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
 
-<h1>PVPテクスチャ平均色枠ツール（PNG限定・サイズ自由）</h1>
-<p>PNG画像をドラッグ＆ドロップしてください。平均色で枠線を描画し、ダウンロードリンクを生成します。</p>
+<h1>PVPテクスチャ平均色枠ツール（PNG限定・ZIP対応）</h1>
+<p>PNG画像をドラッグ＆ドロップしてください。平均色で枠線を描画し、個別またはZIP形式でダウンロード可能です。</p>
 
 <label>枠の太さ: <input type="number" id="thickness" value="1" min="1" max="32" /></label>
 
 <div id="drop-zone">ここに画像ファイルをドロップ</div>
 <div id="result"></div>
+<button id="zip-download">⬇ すべてZIPでダウンロード</button>
 
 <script>
 const dropZone = document.getElementById("drop-zone");
 const resultDiv = document.getElementById("result");
+const zipButton = document.getElementById("zip-download");
+const zip = new JSZip();
+
+let processedCount = 0;
+let totalToProcess = 0;
+let filesToProcess = [];
 
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -68,71 +88,115 @@ function handleFiles(files) {
   if (isNaN(thickness) || thickness < 1) thickness = 1;
 
   resultDiv.innerHTML = "";
+  zip.folder("converted");
+  processedCount = 0;
+  totalToProcess = 0;
+  filesToProcess = [];
 
+  // PNGのみカウント
   for (const file of files) {
-    if (!file.name.toLowerCase().endsWith(".png")) continue;
+    if (file.name.toLowerCase().endsWith(".png")) {
+      totalToProcess++;
+      filesToProcess.push(file);
+    }
+  }
 
-    const img = new Image();
-    const reader = new FileReader();
+  if (totalToProcess === 0) {
+    resultDiv.textContent = "PNG画像が見つかりませんでした。";
+    zipButton.style.display = "none";
+    return;
+  }
 
-    reader.onload = (e) => {
-      img.src = e.target.result;
-    };
-    img.onload = () => {
-      const w = img.width;
-      const h = img.height;
+  zipButton.style.display = "none";
 
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-
-      const imageData = ctx.getImageData(0, 0, w, h);
-      const data = imageData.data;
-
-      let r = 0, g = 0, b = 0, a = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        const alpha = data[i + 3] / 255;
-        r += data[i] * alpha;
-        g += data[i + 1] * alpha;
-        b += data[i + 2] * alpha;
-        a += alpha;
-      }
-
-      const avgR = Math.round(r / Math.max(a, 1));
-      const avgG = Math.round(g / Math.max(a, 1));
-      const avgB = Math.round(b / Math.max(a, 1));
-      const avgColor = `rgba(${avgR},${avgG},${avgB},1)`;
-
-      // 線の太さが大きすぎて画像サイズを超えないよう調整
-      const maxThickness = Math.floor(Math.min(w, h) / 2);
-      const drawThickness = Math.min(thickness, maxThickness);
-
-      ctx.fillStyle = avgColor;
-      for (let i = 0; i < drawThickness; i++) {
-        ctx.fillRect(i, 0, w - i * 2, 1);               // 上辺
-        ctx.fillRect(i, h - 1 - i, w - i * 2, 1);       // 下辺
-        ctx.fillRect(0, i, 1, h - i * 2);               // 左辺
-        ctx.fillRect(w - 1 - i, i, 1, h - i * 2);       // 右辺
-      }
-
-      canvas.style.maxWidth = "256px";
-      canvas.style.maxHeight = "256px";
-
-      // ダウンロードリンク生成
-      canvas.toBlob((blob) => {
-        const link = document.createElement("a");
-        link.download = file.name;
-        link.href = URL.createObjectURL(blob);
-        link.textContent = "⬇ " + file.name;
-        resultDiv.appendChild(canvas);
-        resultDiv.appendChild(link);
-      }, "image/png");
-    };
-    reader.readAsDataURL(file);
+  for (const file of filesToProcess) {
+    processImage(file, thickness);
   }
 }
+
+function processImage(file, thickness) {
+  const img = new Image();
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    img.src = e.target.result;
+  };
+
+  img.onload = () => {
+    const w = img.width;
+    const h = img.height;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+
+    let r = 0, g = 0, b = 0, a = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i + 3] / 255;
+      r += data[i] * alpha;
+      g += data[i + 1] * alpha;
+      b += data[i + 2] * alpha;
+      a += alpha;
+    }
+
+    const avgR = Math.round(r / Math.max(a, 1));
+    const avgG = Math.round(g / Math.max(a, 1));
+    const avgB = Math.round(b / Math.max(a, 1));
+    const avgColor = `rgba(${avgR},${avgG},${avgB},1)`;
+
+    const maxThickness = Math.floor(Math.min(w, h) / 2);
+    const drawThickness = Math.min(thickness, maxThickness);
+
+    ctx.fillStyle = avgColor;
+    for (let i = 0; i < drawThickness; i++) {
+      ctx.fillRect(i, 0, w - i * 2, 1);               // 上辺
+      ctx.fillRect(i, h - 1 - i, w - i * 2, 1);       // 下辺
+      ctx.fillRect(0, i, 1, h - i * 2);               // 左辺
+      ctx.fillRect(w - 1 - i, i, 1, h - i * 2);       // 右辺
+    }
+
+    canvas.style.maxWidth = "256px";
+    canvas.style.maxHeight = "256px";
+
+    // 個別ダウンロードリンク生成
+    canvas.toBlob((blob) => {
+      const link = document.createElement("a");
+      link.download = file.name;
+      link.href = URL.createObjectURL(blob);
+      link.textContent = "⬇ " + file.name;
+      resultDiv.appendChild(canvas);
+      resultDiv.appendChild(link);
+
+      // ZIPに追加
+      const reader2 = new FileReader();
+      reader2.onload = () => {
+        zip.file(file.name, reader2.result.split(",")[1], { base64: true });
+        processedCount++;
+        if (processedCount === totalToProcess) {
+          zipButton.style.display = "inline-block";
+        }
+      };
+      reader2.readAsDataURL(blob);
+    }, "image/png");
+  };
+
+  reader.readAsDataURL(file);
+}
+
+zipButton.addEventListener("click", () => {
+  zip.generateAsync({ type: "blob" }).then((content) => {
+    const zipURL = URL.createObjectURL(content);
+    const a = document.createElement("a");
+    a.href = zipURL;
+    a.download = "converted_textures.zip";
+    a.click();
+  });
+});
 </script>
 
 </body>
