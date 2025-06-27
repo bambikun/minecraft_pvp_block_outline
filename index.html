@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>PVPテクスチャ平均色枠ツール（ZIP対応）</title>
+  <title>PVPテクスチャ平均色枠ツール（PNG限定サイズ自由）</title>
   <style>
     body {
       background: #121212;
@@ -21,6 +21,8 @@
       margin: 10px;
       image-rendering: pixelated;
       border: 1px solid #555;
+      max-width: 256px; /* 大きい画像は見やすいように最大サイズ制限 */
+      max-height: 256px;
     }
     input, label {
       margin-right: 10px;
@@ -30,36 +32,21 @@
       color: #33f;
       margin-bottom: 10px;
     }
-    #zip-download {
-      margin-top: 20px;
-      padding: 10px 20px;
-      background: #444;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-    #zip-download:hover {
-      background: #666;
-    }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
 
-<h1>PVPテクスチャ平均色枠ツール（ZIP対応）</h1>
-<p>16×16 PNG画像をドラッグ＆ドロップしてください。平均色で枠線を描画し、個別ダウンロード＋一括ZIP保存が可能です。</p>
+<h1>PVPテクスチャ平均色枠ツール（PNG限定・サイズ自由）</h1>
+<p>PNG画像をドラッグ＆ドロップしてください。平均色で枠線を描画し、ダウンロードリンクを生成します。</p>
 
-<label>枠の太さ: <input type="number" id="thickness" value="1" min="1" max="8" /></label>
+<label>枠の太さ: <input type="number" id="thickness" value="1" min="1" max="32" /></label>
 
 <div id="drop-zone">ここに画像ファイルをドロップ</div>
 <div id="result"></div>
-<button id="zip-download" style="display:none">⬇ すべてZIPでダウンロード</button>
 
 <script>
 const dropZone = document.getElementById("drop-zone");
 const resultDiv = document.getElementById("result");
-const zipButton = document.getElementById("zip-download");
-const zip = new JSZip();
 
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -76,37 +63,34 @@ dropZone.addEventListener("drop", (e) => {
 });
 
 function handleFiles(files) {
-  const thickness = parseInt(document.getElementById("thickness").value, 10);
-  resultDiv.innerHTML = "";
-  zip.folder("converted");
+  const thicknessInput = document.getElementById("thickness");
+  let thickness = parseInt(thicknessInput.value, 10);
+  if (isNaN(thickness) || thickness < 1) thickness = 1;
 
-  let processedCount = 0;
-  let totalToProcess = 0;
+  resultDiv.innerHTML = "";
 
   for (const file of files) {
-    if (!file.name.endsWith(".png")) continue;
-    totalToProcess++;
+    if (!file.name.toLowerCase().endsWith(".png")) continue;
 
     const img = new Image();
     const reader = new FileReader();
-    reader.onload = (e) => { img.src = e.target.result; };
+
+    reader.onload = (e) => {
+      img.src = e.target.result;
+    };
     img.onload = () => {
-      if (img.width !== 16 || img.height !== 16) {
-        const warn = document.createElement("p");
-        warn.textContent = `⚠ スキップ: ${file.name}（サイズが16x16ではありません）`;
-        resultDiv.appendChild(warn);
-        processedCount++;
-        return;
-      }
+      const w = img.width;
+      const h = img.height;
 
       const canvas = document.createElement("canvas");
-      canvas.width = 16;
-      canvas.height = 16;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0);
 
-      const imageData = ctx.getImageData(0, 0, 16, 16);
+      const imageData = ctx.getImageData(0, 0, w, h);
       const data = imageData.data;
+
       let r = 0, g = 0, b = 0, a = 0;
       for (let i = 0; i < data.length; i += 4) {
         const alpha = data[i + 3] / 255;
@@ -121,16 +105,22 @@ function handleFiles(files) {
       const avgB = Math.round(b / Math.max(a, 1));
       const avgColor = `rgba(${avgR},${avgG},${avgB},1)`;
 
-      // 枠線描画
+      // 線の太さが大きすぎて画像サイズを超えないよう調整
+      const maxThickness = Math.floor(Math.min(w, h) / 2);
+      const drawThickness = Math.min(thickness, maxThickness);
+
       ctx.fillStyle = avgColor;
-      for (let i = 0; i < thickness; i++) {
-        ctx.fillRect(i, 0, 16 - i * 2, 1);               // 上
-        ctx.fillRect(i, 15 - i, 16 - i * 2, 1);           // 下
-        ctx.fillRect(0, i, 1, 16 - i * 2);               // 左
-        ctx.fillRect(15 - i, i, 1, 16 - i * 2);           // 右
+      for (let i = 0; i < drawThickness; i++) {
+        ctx.fillRect(i, 0, w - i * 2, 1);               // 上辺
+        ctx.fillRect(i, h - 1 - i, w - i * 2, 1);       // 下辺
+        ctx.fillRect(0, i, 1, h - i * 2);               // 左辺
+        ctx.fillRect(w - 1 - i, i, 1, h - i * 2);       // 右辺
       }
 
-      // 個別保存リンク
+      canvas.style.maxWidth = "256px";
+      canvas.style.maxHeight = "256px";
+
+      // ダウンロードリンク生成
       canvas.toBlob((blob) => {
         const link = document.createElement("a");
         link.download = file.name;
@@ -138,32 +128,11 @@ function handleFiles(files) {
         link.textContent = "⬇ " + file.name;
         resultDiv.appendChild(canvas);
         resultDiv.appendChild(link);
-
-        // ZIPに追加
-        const reader2 = new FileReader();
-        reader2.onload = () => {
-          zip.file(file.name, reader2.result.split(",")[1], { base64: true });
-          processedCount++;
-          if (processedCount === totalToProcess) {
-            zipButton.style.display = "inline-block";
-          }
-        };
-        reader2.readAsDataURL(blob);
       }, "image/png");
     };
     reader.readAsDataURL(file);
   }
 }
-
-zipButton.addEventListener("click", () => {
-  zip.generateAsync({ type: "blob" }).then((content) => {
-    const zipURL = URL.createObjectURL(content);
-    const a = document.createElement("a");
-    a.href = zipURL;
-    a.download = "converted_textures.zip";
-    a.click();
-  });
-});
 </script>
 
 </body>
