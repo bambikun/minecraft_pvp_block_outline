@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>PVPテクスチャ平均色枠ツール（自動明暗補正 + ZIP対応）</title>
+  <title>PVPテクスチャ平均色枠ツール（自動補正＋ZIP）</title>
   <style>
     body {
       background: #121212;
@@ -50,11 +50,11 @@
 <body>
 
 <h1>PVPテクスチャ平均色枠ツール</h1>
-<p>PNG画像をドロップすると、平均色で自動的に枠線を描きます（明暗に応じて補正あり）。</p>
+<p>PNG画像をドロップすると、平均色（明るさ自動補正）で枠線を描画し、個別またはZIPでダウンロードできます。</p>
 
 <label>枠の太さ: <input type="number" id="thickness" value="1" min="1" max="32" /></label>
 
-<div id="drop-zone">ここにPNG画像をドロップしてください</div>
+<div id="drop-zone">ここにPNG画像ファイルをドロップしてください</div>
 <div id="result"></div>
 <button id="zip-download">⬇ ZIPで一括ダウンロード</button>
 
@@ -82,7 +82,7 @@ dropZone.addEventListener("drop", (e) => {
   handleFiles(files);
 });
 
-function handleFiles(files) {
+function handleFiles(fileList) {
   const thicknessInput = document.getElementById("thickness");
   let thickness = parseInt(thicknessInput.value, 10);
   if (isNaN(thickness) || thickness < 1) thickness = 1;
@@ -93,7 +93,7 @@ function handleFiles(files) {
   totalToProcess = 0;
   filesToProcess = [];
 
-  for (const file of files) {
+  for (const file of fileList) {
     if (file.name.toLowerCase().endsWith(".png")) {
       totalToProcess++;
       filesToProcess.push(file);
@@ -147,7 +147,7 @@ function processImage(file, thickness) {
     const avgG = Math.round(g / Math.max(a, 1));
     const avgB = Math.round(b / Math.max(a, 1));
 
-    // 明るさを計算して補正
+    // 明るさに応じて補正
     const brightness = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
     let modR = avgR, modG = avgG, modB = avgB;
     if (brightness > 160) {
@@ -159,6 +159,7 @@ function processImage(file, thickness) {
       modG = Math.min(255, Math.round(avgG * 1.4));
       modB = Math.min(255, Math.round(avgB * 1.4));
     }
+
     const modColor = `rgb(${modR},${modG},${modB})`;
 
     const maxThickness = Math.floor(Math.min(w, h) / 2);
