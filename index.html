@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>PVPテクスチャ平均色枠ツール（PNG限定・ZIP対応）</title>
+  <title>PVPテクスチャ平均色枠ツール（自動明暗補正 + ZIP対応）</title>
   <style>
     body {
       background: #121212;
@@ -49,14 +49,14 @@
 </head>
 <body>
 
-<h1>PVPテクスチャ平均色枠ツール（PNG限定・ZIP対応）</h1>
-<p>PNG画像をドラッグ＆ドロップしてください。平均色で枠線を描画し、個別またはZIP形式でダウンロード可能です。</p>
+<h1>PVPテクスチャ平均色枠ツール</h1>
+<p>PNG画像をドロップすると、平均色で自動的に枠線を描きます（明暗に応じて補正あり）。</p>
 
 <label>枠の太さ: <input type="number" id="thickness" value="1" min="1" max="32" /></label>
 
-<div id="drop-zone">ここに画像ファイルをドロップ</div>
+<div id="drop-zone">ここにPNG画像をドロップしてください</div>
 <div id="result"></div>
-<button id="zip-download">⬇ すべてZIPでダウンロード</button>
+<button id="zip-download">⬇ ZIPで一括ダウンロード</button>
 
 <script>
 const dropZone = document.getElementById("drop-zone");
@@ -93,7 +93,6 @@ function handleFiles(files) {
   totalToProcess = 0;
   filesToProcess = [];
 
-  // PNGのみカウント
   for (const file of files) {
     if (file.name.toLowerCase().endsWith(".png")) {
       totalToProcess++;
@@ -147,12 +146,25 @@ function processImage(file, thickness) {
     const avgR = Math.round(r / Math.max(a, 1));
     const avgG = Math.round(g / Math.max(a, 1));
     const avgB = Math.round(b / Math.max(a, 1));
-    const avgColor = `rgba(${avgR},${avgG},${avgB},1)`;
+
+    // 明るさを計算して補正
+    const brightness = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
+    let modR = avgR, modG = avgG, modB = avgB;
+    if (brightness > 160) {
+      modR = Math.max(0, Math.round(avgR * 0.6));
+      modG = Math.max(0, Math.round(avgG * 0.6));
+      modB = Math.max(0, Math.round(avgB * 0.6));
+    } else if (brightness < 96) {
+      modR = Math.min(255, Math.round(avgR * 1.4));
+      modG = Math.min(255, Math.round(avgG * 1.4));
+      modB = Math.min(255, Math.round(avgB * 1.4));
+    }
+    const modColor = `rgb(${modR},${modG},${modB})`;
 
     const maxThickness = Math.floor(Math.min(w, h) / 2);
     const drawThickness = Math.min(thickness, maxThickness);
 
-    ctx.fillStyle = avgColor;
+    ctx.fillStyle = modColor;
     for (let i = 0; i < drawThickness; i++) {
       ctx.fillRect(i, 0, w - i * 2, 1);               // 上辺
       ctx.fillRect(i, h - 1 - i, w - i * 2, 1);       // 下辺
@@ -163,7 +175,6 @@ function processImage(file, thickness) {
     canvas.style.maxWidth = "256px";
     canvas.style.maxHeight = "256px";
 
-    // 個別ダウンロードリンク生成
     canvas.toBlob((blob) => {
       const link = document.createElement("a");
       link.download = file.name;
@@ -172,7 +183,6 @@ function processImage(file, thickness) {
       resultDiv.appendChild(canvas);
       resultDiv.appendChild(link);
 
-      // ZIPに追加
       const reader2 = new FileReader();
       reader2.onload = () => {
         zip.file(file.name, reader2.result.split(",")[1], { base64: true });
