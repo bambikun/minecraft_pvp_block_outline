@@ -113,9 +113,6 @@ function traverse(entry, currentPath, pending, thickness) {
   return new Promise((resolve) => {
     if (entry.isFile) {
       entry.file((file) => {
-        if (file.name.toLowerCase().endsWith(".png")) {
-          filesToProcess.push({ file, path: currentPath + file.name, thickness });
-        }
         resolve();
       });
     } else if (entry.isDirectory) {
