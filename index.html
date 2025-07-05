@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>PVPテクスチャ平均色枠ツール（自動補正＋ZIP）</title>
+  <title>画像平均色枠ツール</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     body {
       background: #121212;
@@ -24,15 +25,7 @@
       max-width: 256px;
       max-height: 256px;
     }
-    input, label {
-      margin-right: 10px;
-    }
-    a {
-      display: block;
-      color: #33f;
-      margin-bottom: 10px;
-    }
-    #zip-download {
+    #zip-button {
       margin-top: 20px;
       padding: 10px 20px;
       background: #444;
@@ -41,98 +34,78 @@
       cursor: pointer;
       display: none;
     }
-    #zip-download:hover {
+    #zip-button:hover {
       background: #666;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
 
-<h1>PVPテクスチャ平均色枠ツール（フォルダ対応）</h1>
-<p>PNG画像またはフォルダをドロップしてください。ZIPに構造を維持して保存されます。</p>
+<h1>画像平均色枠ツール</h1>
+<p>画像やフォルダをドロップすると、平均色で枠線を描画し、ZIPで保存できます。</p>
 
-<label>枠の太さ: <input type="number" id="thickness" value="1" min="1" max="32" /></label>
+<label>枠線の太さ: <input type="number" id="thickness" value="1" min="1" max="32"></label>
 
-<div id="drop-zone">ここにファイルやフォルダをドロップ</div>
+<div id="drop-zone">ここに画像またはフォルダをドロップ</div>
 <div id="result"></div>
-<button id="zip-download">⬇ ZIPで一括ダウンロード</button>
+<button id="zip-button">ZIPで一括ダウンロード</button>
 
 <script>
 const dropZone = document.getElementById("drop-zone");
 const resultDiv = document.getElementById("result");
-const zipButton = document.getElementById("zip-download");
+const zipButton = document.getElementById("zip-button");
 const zip = new JSZip();
+let total = 0, completed = 0;
 
-let processedCount = 0;
-let totalToProcess = 0;
-let filesToProcess = [];
-
-dropZone.addEventListener("dragover", (e) => {
+dropZone.addEventListener("dragover", e => {
   e.preventDefault();
   dropZone.style.background = "#2a2a2a";
 });
 dropZone.addEventListener("dragleave", () => {
   dropZone.style.background = "#1e1e1e";
 });
-dropZone.addEventListener("drop", (e) => {
+dropZone.addEventListener("drop", e => {
   e.preventDefault();
   dropZone.style.background = "#1e1e1e";
   resultDiv.innerHTML = "";
-  zip.remove("converted"); // リセット
+  zip.folder("converted");
+  zipButton.style.display = "none";
   const thickness = Math.max(1, parseInt(document.getElementById("thickness").value, 10));
   const items = e.dataTransfer.items;
+  total = 0;
+  completed = 0;
 
-  processedCount = 0;
-  totalToProcess = 0;
-  filesToProcess = [];
-
-  const pending = [];
   for (let i = 0; i < items.length; i++) {
-    const entry = items[i].webkitGetAsEntry?.();
+    const entry = items[i].webkitGetAsEntry();
     if (entry) {
-      traverse(entry, "", pending, thickness);
+      traverse(entry, "", thickness);
     }
   }
-
-  Promise.all(pending).then(() => {
-    if (filesToProcess.length === 0) {
-      resultDiv.textContent = "PNG画像が見つかりませんでした。";
-      zipButton.style.display = "none";
-      return;
-    }
-    zipButton.style.display = "none";
-    totalToProcess = filesToProcess.length;
-    for (const { file, path, thickness } of filesToProcess) {
-      processImage(file, path, thickness);
-    }
-  });
 });
 
-function traverse(entry, currentPath, pending, thickness) {
-  return new Promise((resolve) => {
-    if (entry.isFile) {
-      entry.file((file) => {
-        filesToProcess.push({ file, path: currentPath + file.name, thickness });
-        resolve();
-      });
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      reader.readEntries((entries) => {
-        const subPromises = [];
-        for (const subEntry of entries) {
-          subPromises.push(traverse(subEntry, currentPath + entry.name + "/", pending, thickness));
-        }
-        Promise.all(subPromises).then(resolve);
-      });
-    }
-  }).then((p) => pending.push(p));
+function traverse(entry, path, thickness) {
+  if (entry.isFile) {
+    entry.file(file => {
+      if (!file.type.startsWith("image/")) return;
+      const fullPath = path + file.name;
+      processImage(file, fullPath, thickness);
+    });
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    reader.readEntries(entries => {
+      for (const e of entries) {
+        traverse(e, path + entry.name + "/", thickness);
+      }
+    });
+  }
 }
 
 function processImage(file, zipPath, thickness) {
-  const img = new Image();
+  total++;
   const reader = new FileReader();
-  reader.onload = (e) => img.src = e.target.result;
+  const img = new Image();
+
+  reader.onload = e => img.src = e.target.result;
   img.onload = () => {
     const w = img.width;
     const h = img.height;
@@ -141,56 +114,57 @@ function processImage(file, zipPath, thickness) {
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0);
-    const imageData = ctx.getImageData(0, 0, w, h).data;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
 
     let r = 0, g = 0, b = 0, a = 0;
-    for (let i = 0; i < imageData.length; i += 4) {
-      const alpha = imageData[i + 3] / 255;
-      r += imageData[i] * alpha;
-      g += imageData[i + 1] * alpha;
-      b += imageData[i + 2] * alpha;
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i + 3] / 255;
+      r += data[i] * alpha;
+      g += data[i + 1] * alpha;
+      b += data[i + 2] * alpha;
       a += alpha;
     }
-    const avgR = Math.round(r / Math.max(a, 1));
-    const avgG = Math.round(g / Math.max(a, 1));
-    const avgB = Math.round(b / Math.max(a, 1));
+    r = Math.round(r / Math.max(a, 1));
+    g = Math.round(g / Math.max(a, 1));
+    b = Math.round(b / Math.max(a, 1));
 
-    const brightness = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
-    let modR = avgR, modG = avgG, modB = avgB;
+    // 明るさ補正
+    const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
     if (brightness > 160) {
-      modR = Math.max(0, Math.round(avgR * 0.6));
-      modG = Math.max(0, Math.round(avgG * 0.6));
-      modB = Math.max(0, Math.round(avgB * 0.6));
+      r = Math.max(0, r * 0.6);
+      g = Math.max(0, g * 0.6);
+      b = Math.max(0, b * 0.6);
     } else if (brightness < 96) {
-      modR = Math.min(255, Math.round(avgR * 1.4));
-      modG = Math.min(255, Math.round(avgG * 1.4));
-      modB = Math.min(255, Math.round(avgB * 1.4));
+      r = Math.min(255, r * 1.4);
+      g = Math.min(255, g * 1.4);
+      b = Math.min(255, b * 1.4);
     }
 
-    const modColor = `rgb(${modR},${modG},${modB})`;
-    const maxThickness = Math.floor(Math.min(w, h) / 2);
-    const drawThickness = Math.min(thickness, maxThickness);
-    ctx.fillStyle = modColor;
-    for (let i = 0; i < drawThickness; i++) {
+    const color = `rgb(${r},${g},${b})`;
+    ctx.fillStyle = color;
+    const edge = Math.min(thickness, Math.floor(Math.min(w, h) / 2));
+
+    for (let i = 0; i < edge; i++) {
       ctx.fillRect(i, 0, w - i * 2, 1);
       ctx.fillRect(i, h - 1 - i, w - i * 2, 1);
       ctx.fillRect(0, i, 1, h - i * 2);
       ctx.fillRect(w - 1 - i, i, 1, h - i * 2);
     }
 
-    canvas.toBlob((blob) => {
-      const link = document.createElement("a");
-      link.download = zipPath;
-      link.href = URL.createObjectURL(blob);
-      link.textContent = "⬇ " + zipPath;
+    canvas.toBlob(blob => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = zipPath;
+      a.textContent = "⬇ " + zipPath;
       resultDiv.appendChild(canvas);
-      resultDiv.appendChild(link);
+      resultDiv.appendChild(a);
 
       const reader2 = new FileReader();
       reader2.onload = () => {
         zip.file("converted/" + zipPath, reader2.result.split(",")[1], { base64: true });
-        processedCount++;
-        if (processedCount === totalToProcess) {
+        completed++;
+        if (completed === total) {
           zipButton.style.display = "inline-block";
         }
       };
@@ -201,11 +175,10 @@ function processImage(file, zipPath, thickness) {
 }
 
 zipButton.addEventListener("click", () => {
-  zip.generateAsync({ type: "blob" }).then((content) => {
-    const zipURL = URL.createObjectURL(content);
+  zip.generateAsync({ type: "blob" }).then(blob => {
     const a = document.createElement("a");
-    a.href = zipURL;
-    a.download = "converted_textures.zip";
+    a.href = URL.createObjectURL(blob);
+    a.download = "converted_images.zip";
     a.click();
   });
 });
