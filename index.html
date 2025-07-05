@@ -146,10 +146,11 @@ function processImage(file, zipPath, thickness) {
     const edge = Math.min(thickness, Math.floor(Math.min(w, h) / 2));
 
     for (let i = 0; i < edge; i++) {
-      ctx.fillRect(i, 0, w - i * 2, 1);
-      ctx.fillRect(i, h - 1 - i, w - i * 2, 1);
-      ctx.fillRect(0, i, 1, h - i * 2);
-      ctx.fillRect(w - 1 - i, i, 1, h - i * 2);
+      ctx.fillRect(0, 0, w, thickness); // 上
+      ctx.fillRect(0, h - thickness, w, thickness); // 下
+      ctx.fillRect(0, 0, thickness, h); // 左
+      ctx.fillRect(w - thickness, 0, thickness, h); // 右
+
     }
 
     canvas.toBlob(blob => {
