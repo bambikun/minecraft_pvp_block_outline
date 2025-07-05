@@ -136,9 +136,9 @@ function processImage(file, zipPath, thickness) {
       g = Math.max(0, g * 0.6);
       b = Math.max(0, b * 0.6);
     } else if (brightness < 96) {
-      r = Math.min(255, r * 1.4);
-      g = Math.min(255, g * 1.4);
-      b = Math.min(255, b * 1.4);
+      r = Math.max(0, r * 0.6);
+      g = Math.max(0, g * 0.6);
+      b = Math.max(0, b * 0.6);
     }
 
     const color = `rgb(${r},${g},${b})`;
